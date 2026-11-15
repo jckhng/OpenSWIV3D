@@ -9,7 +9,7 @@ import zipfile
 
 PROJECT = Path(__file__).resolve().parents[1]
 TITLE = "OpenSWIV3D"
-VERSION = "0.1.0-alpha.5"
+VERSION = "0.1.0-alpha.6"
 DOCS = ("README.md", "BUILDING.md", "NOTICE.md", "TESTING.md", "LICENSE", "Play.cmd", "CHANGELOG.md")
 PLAYER_FILES = ("swiv3d_player.exe", "swiv3d_smacker.dll")
 REIMPLEMENTATION = Path("reimplementation")
@@ -65,7 +65,7 @@ def main():
     docs = PROJECT / "release" if (PROJECT / "release").is_dir() else PROJECT
     output.mkdir(parents=True)
     copy_files(docs, output, DOCS)
-    copy_files(PROJECT, output, (Path("docs/DEVELOPMENT.md"),))
+    copy_files(PROJECT, output, (Path("docs/DEVELOPMENT.md"), Path("docs/RELEASE_AUDIT.md")))
     copy_files(PROJECT, output, (DECODER / name for name in DECODER_FILES))
     if args.kind == "source":
         copy_files(docs, output, (".gitignore", ".gitattributes"))

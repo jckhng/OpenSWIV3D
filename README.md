@@ -1,7 +1,7 @@
 # OpenSWIV3D
 
 OpenSWIV3D is an unofficial native reimplementation of the DOS version of
-SWIV 3D. Version 0.1.0-alpha.5 is a Windows x64 testing build. It loads the
+SWIV 3D. Version 0.1.0-alpha.6 is a Windows x64 testing build. It loads the
 game files from your own original installation.
 
 The prepared public alpha includes source and Windows x64 archives. See
@@ -64,6 +64,9 @@ mission, craft, controller type, and steps to reproduce. Keep original files,
 personal profiles and captures private.
 
 [Build from source](BUILDING.md) Â· [Distribution notices](NOTICE.md)
+
+The source/privacy and license review is recorded in
+[docs/RELEASE_AUDIT.md](docs/RELEASE_AUDIT.md).
 
 ## License
 

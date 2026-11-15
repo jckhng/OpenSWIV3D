@@ -1,13 +1,17 @@
-# OpenSWIV3D 0.1.0-alpha.5
+# OpenSWIV3D 0.1.0-alpha.6
 
-Prepared on 14 November 2026 as a public Windows x64 testing alpha.
+Prepared on 15 November 2026 as a public Windows x64 testing alpha.
+
+This revision adds a visible libsmacker copyright/license reference to the
+native window title and records the source/privacy and license audit.
+Public Git history uses the owner-approved GitHub noreply identity.
 Project-authored source and documentation use MIT. The decoder retains
 its LGPL 2.1-or-later license.
 
 ## Release files
 
-- `OpenSWIV3D-0.1.0-alpha.5-windows-x64.zip`
-- `OpenSWIV3D-0.1.0-alpha.5-source.zip`
+- `OpenSWIV3D-0.1.0-alpha.6-windows-x64.zip`
+- `OpenSWIV3D-0.1.0-alpha.6-source.zip`
 - `SHA256SUMS.txt`
 - `release-index.json`
 

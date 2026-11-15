@@ -42,8 +42,8 @@ The archives include license notices and corresponding decoder source.
 Review staged files and Git history for imported resources, personal paths
 and local configuration before pushing the repository.
 
-For this alpha, prepare tag `v0.1.0-alpha.5` and a GitHub prerelease titled
-`OpenSWIV3D 0.1.0-alpha.5`, using CHANGELOG.md as the release description.
+For this alpha, prepare tag `v0.1.0-alpha.6` and a GitHub prerelease titled
+`OpenSWIV3D 0.1.0-alpha.6`, using CHANGELOG.md as the release description.
 Attach the two ZIPs, SHA256SUMS.txt and release-index.json from the reviewed commit. Check their
 hashes against the prepared release before publication. GitHub-generated
 source archives come from the committed tree.

@@ -24,7 +24,7 @@ public:
         RECT rectangle{0, 0, 960, 720};
         AdjustWindowRect(&rectangle, WS_OVERLAPPEDWINDOW, FALSE);
         handle_ = CreateWindowW(type.lpszClassName,
-            L"SWIV3D - Arrows: fly/turn | Space: fire | Pause: pause | Esc: abort",
+            L"OpenSWIV3D | libsmacker (c) 2012-2021 Greg Kennedy, LGPL 2.1+ | see NOTICE.md",
             WS_OVERLAPPEDWINDOW, CW_USEDEFAULT, CW_USEDEFAULT, rectangle.right - rectangle.left,
             rectangle.bottom - rectangle.top, nullptr, nullptr, instance, this);
         if (!handle_) {

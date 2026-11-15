@@ -12,6 +12,9 @@ contains recovered behavior constants and numerical tables.
 
 ## libsmacker
 
+Copyright (C) 2012-2021 Greg Kennedy. The native window title displays the
+decoder attribution and directs users to this notice.
+
 `swiv3d_smacker.dll` contains libsmacker by Greg Kennedy, licensed under the
 GNU Lesser General Public License, version 2.1 or later. The Windows ZIP
 includes the corresponding decoder source, local change notes and `COPYING`

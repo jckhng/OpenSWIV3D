@@ -8,6 +8,7 @@
 #include <fstream>
 #include <iostream>
 #include <stdexcept>
+#include <string>
 
 namespace {
 
@@ -19,6 +20,7 @@ void require(bool value, const char* message) {
 
 struct WindowApi {
     WNDPROC procedure = nullptr;
+    std::wstring title;
     LONG_PTR user = 0;
     bool live = false;
     bool foreground = true;
@@ -96,6 +98,9 @@ void verify_paint(const swiv3d::MissionFrame& frame) {
 void test_keys_and_focus() {
     api = {};
     swiv3d::host::Window window;
+    require(api.title.find(L"libsmacker (c) 2012-2021 Greg Kennedy") != std::wstring::npos &&
+            api.title.find(L"LGPL 2.1+") != std::wstring::npos && api.title.find(L"NOTICE.md") != std::wstring::npos,
+            "Native window lacks decoder copyright, license and notice reference");
     require(window.focused(), "Foreground window not recognized");
     api.foreground = false;
     require(!window.focused(), "Background window reported focused");
@@ -243,7 +248,8 @@ HINSTANCE GetModuleHandleW(const wchar_t*) { return handle(); }
 HCURSOR LoadCursor(HINSTANCE, const char*) { return handle(); }
 unsigned short RegisterClassW(const WNDCLASSW* type) { api.procedure = type->lpfnWndProc; return 1; }
 BOOL AdjustWindowRect(RECT*, DWORD, BOOL) { return TRUE; }
-HWND CreateWindowW(const wchar_t*, const wchar_t*, DWORD, int, int, int width, int height, HWND, void*, HINSTANCE, void* parameter) {
+HWND CreateWindowW(const wchar_t*, const wchar_t* title, DWORD, int, int, int width, int height, HWND, void*, HINSTANCE, void* parameter) {
+    api.title = title;
     api.live = true;
     api.client = {0, 0, width, height};
     CREATESTRUCTW creation{parameter};
