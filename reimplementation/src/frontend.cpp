@@ -79,6 +79,8 @@ enum Scan : std::uint32_t {
     special_fire = 0x32, comma = 0x33, period = 0x34, space = 0x39, f1 = 0x3b, f11 = 0x57, f12 = 0x58,
     keypad_up = 0x48, keypad_minus = 0x4a, keypad_left = 0x4b, keypad_right = 0x4d, keypad_plus = 0x4e,
     keypad_down = 0x50, keypad_enter = 0x9c,
+    mouse_button_1 = 0x90, mouse_button_2 = 0x91,
+    joystick_button_1 = 0x93, joystick_button_2 = 0x94, joystick_button_3 = 0x95, joystick_button_4 = 0x96,
     up = 0xc8, page_up = 0xc9, left = 0xcb, right = 0xcd,
     down = 0xd0, page_down = 0xd1
 };
@@ -775,7 +777,9 @@ private:
             }
             return;
         case FrontendPhase::controller_type:
-            if (profiles_.controls(state_.player).get(controller_type_offset) != static_cast<unsigned>(selection)) { controller_defaults(selection); }
+            if (profiles_.controls(state_.player).get(controller_type_offset) != static_cast<unsigned>(selection)) {
+                controller_defaults(static_cast<ControllerKind>(selection));
+            }
             bindings_menu();
             return;
         case FrontendPhase::controller_bindings:
@@ -1141,17 +1145,28 @@ private:
         menu_.select(1); menu_.ensure_selection();
     }
 
-    void controller_defaults(int type) {
+    void controller_defaults(ControllerKind kind) {
         auto& record = profiles_.controls(state_.player);
         std::uint32_t keys[]{left, right, up, down, comma, period, space,
-                                       special_fire, page_up, page_down, control};
-        std::array<std::uint8_t,4> axes{1,2,0,1};
-        if (type > 1) { keys[4] = left; keys[5] = right; }
-        if (type == 2) { keys[6] = 0x90; keys[7] = 0x91; axes[1] = 0; }
-        if (type == 3 || type == 4) {
-            keys[6] = 0x93; keys[7] = 0x94; keys[8] = type == 4 ? 0x96 : up; keys[9] = down; keys[10] = 0x95;
+                             special_fire, page_up, page_down, control};
+        std::array<std::uint8_t, 4> axes{1, 2, 0, 1};
+        if (kind > ControllerKind::keyboard) {
+            keys[4] = left;
+            keys[5] = right;
         }
-        record.set(controller_type_offset, type);
+        if (kind == ControllerKind::mouse) {
+            keys[6] = mouse_button_1;
+            keys[7] = mouse_button_2;
+            axes[1] = 0;
+        }
+        if (kind == ControllerKind::joystick || kind == ControllerKind::gamepad) {
+            keys[6] = joystick_button_1;
+            keys[7] = joystick_button_2;
+            keys[8] = kind == ControllerKind::gamepad ? joystick_button_4 : up;
+            keys[9] = down;
+            keys[10] = joystick_button_3;
+        }
+        record.set(controller_type_offset, static_cast<std::uint32_t>(kind));
         for (std::size_t i = 0; i < std::size(keys); ++i) {
             record.set(controller_keys_offset + i * sizeof(std::uint32_t), keys[i]);
         }

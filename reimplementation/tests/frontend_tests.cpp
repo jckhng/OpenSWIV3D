@@ -643,6 +643,85 @@ void select(swiv3d::Frontend& frontend,int action) {
     frontend.press(0x1c);
 }
 
+void test_controller_defaults_and_reselection() {
+    using swiv3d::ControllerKind;
+    constexpr std::size_t record_bytes = 128;
+    constexpr std::size_t type_offset = 12;
+    constexpr std::size_t keys_offset = 16;
+    constexpr std::size_t axes_offset = 60;
+    struct Defaults {
+        ControllerKind kind;
+        std::array<std::uint32_t, 11> keys;
+        std::array<std::uint8_t, 4> axes;
+    };
+    const Defaults cases[]{
+        {ControllerKind::keyboard, {0xcb,0xcd,0xc8,0xd0,0x33,0x34,0x39,0x32,0xc9,0xd1,0x1d}, {1,2,0,1}},
+        {ControllerKind::mouse, {0xcb,0xcd,0xc8,0xd0,0xcb,0xcd,0x90,0x91,0xc9,0xd1,0x1d}, {1,0,0,1}},
+        {ControllerKind::joystick, {0xcb,0xcd,0xc8,0xd0,0xcb,0xcd,0x93,0x94,0xc8,0xd0,0x95}, {1,2,0,1}},
+        {ControllerKind::gamepad, {0xcb,0xcd,0xc8,0xd0,0xcb,0xcd,0x93,0x94,0x96,0xd0,0x95}, {1,2,0,1}},
+    };
+    std::vector<std::uint8_t> header(record_bytes);
+    put(header, 0, 20);
+    put(header, 8, 2);
+    const auto controls_offset = [&](const std::vector<std::uint8_t>& configuration) {
+        for (std::size_t offset = 0; offset + record_bytes <= configuration.size(); offset += record_bytes) {
+            if (std::equal(header.begin(), header.begin() + type_offset, configuration.begin() + offset)) {
+                return offset;
+            }
+        }
+        throw std::runtime_error("Controller fixture lost its pilot-zero controls record");
+    };
+    for (const auto& expected : cases) {
+        swiv3d::Frontend frontend(globals(), {});
+        frontend.devices({true, true});
+        for (auto scan : {0x1c, 0x1e, 0x1c}) {
+            frontend.press(scan);
+        }
+        select(frontend, static_cast<int>(expected.kind));
+        auto record = header;
+        put(record, type_offset, static_cast<std::uint32_t>(expected.kind));
+        for (std::size_t key = 0; key < expected.keys.size(); ++key) {
+            put(record, keys_offset + key * sizeof(std::uint32_t), expected.keys[key]);
+        }
+        std::copy(expected.axes.begin(), expected.axes.end(), record.begin() + axes_offset);
+        const auto configuration = frontend.configuration();
+        require(std::equal(record.begin(), record.end(), configuration.begin() + controls_offset(configuration)),
+                "Controller selection changed its complete default record");
+
+        auto customized = frontend.configuration_file();
+        const auto offset = controls_offset(customized);
+        put(customized, offset + keys_offset, 0x1e);
+        customized[offset + axes_offset] = 0;
+        swiv3d::Frontend loaded(globals(), customized);
+        loaded.devices({true, true});
+        select(loaded, 100);
+        select(loaded, 4);
+        select(loaded, 10);
+        select(loaded, 1);
+        select(loaded, static_cast<int>(expected.kind));
+        const auto reselected = loaded.configuration();
+        require(std::equal(customized.begin() + offset, customized.begin() + offset + record_bytes,
+                           reselected.begin() + controls_offset(reselected)),
+                "Reselecting a loaded controller reset custom bindings or axes");
+
+        for (auto legacy : {ControllerKind::direct_input, ControllerKind::creative}) {
+            auto legacy_configuration = customized;
+            put(legacy_configuration, offset + type_offset, static_cast<std::uint32_t>(legacy));
+            swiv3d::Frontend legacy_frontend(globals(), legacy_configuration);
+            legacy_frontend.devices({true, true});
+            select(legacy_frontend, 100);
+            require(legacy_frontend.state().phase == swiv3d::FrontendPhase::controller_type,
+                    "Legacy controller profile did not request device selection");
+            put(legacy_configuration, offset + type_offset, 0);
+            const auto legacy_record = legacy_frontend.configuration();
+            require(std::equal(legacy_configuration.begin() + offset,
+                               legacy_configuration.begin() + offset + record_bytes,
+                               legacy_record.begin() + controls_offset(legacy_record)),
+                    "Legacy controller fallback discarded its retained bindings or axes");
+        }
+    }
+}
+
 void test_device_and_cheat_routes() {
     swiv3d::Frontend frontend(globals(),{});
     frontend.devices({true,true});
@@ -835,6 +914,7 @@ int main(int argc, char** argv) {
         test_settings_entry();
         test_pilot_record_deletion();
         test_device_and_cheat_routes();
+        test_controller_defaults_and_reselection();
         test_main_menu_presentations();
         std::cout << "Retained pilot, keyboard and campaign route passed\n";
     } catch (const std::exception& error) {
