@@ -56,6 +56,7 @@ std::vector<std::uint8_t> strings() {
     }
     groups[1000][0x01] = "#";
     groups[1000][0x1e] = "A";
+    groups[1000][0x48] = "Keypad Up";
     for (auto scan : {0x90,0x91,0x93,0x94,0x95,0x96}) { groups[1000][scan] = "Device button"; }
     for (unsigned id = 0; id < 20; ++id) { groups[100][id] = "Weapon"; }
     for (unsigned id : {100U,101U,102U,105U,106U,107U,108U,113U,200U,201U,202U,203U,1001U,9999U}) { groups[100][id] = "Cheat"; }
@@ -442,6 +443,79 @@ void test_menu_action_feedback() {
             "Accepted remapping key omitted one-shot action feedback");
 }
 
+void test_raw_editor_keys() {
+    using swiv3d::FrontendPhase;
+    swiv3d::Frontend frontend(globals(), {});
+    frontend.press(0x1c);
+    frontend.press(0x1e);
+    frontend.press(0x9c);
+    require(frontend.state().phase == FrontendPhase::pilot_name,
+            "Pilot editor normalized keypad Enter before consuming the raw key");
+    frontend.press(0x1c);
+    frontend.press(0x1c);
+    frontend.press(0xd0);
+    frontend.press(0x1c);
+    require(frontend.state().phase == FrontendPhase::key_capture,
+            "Raw-key fixture did not enter controller remapping");
+    frontend.take_menu_sounds();
+    const auto before = frontend.configuration();
+    for (auto scan : {0, 0x100, 0x01}) {
+        frontend.press(scan);
+    }
+    require(frontend.state().phase == FrontendPhase::key_capture && frontend.configuration() == before &&
+            frontend.take_menu_sounds().empty(), "Rejected raw binding changed the editor or profile");
+    frontend.press(0x48);
+    require(frontend.state().phase == FrontendPhase::controller_bindings && frontend.state().selection == 21 &&
+            frontend.take_menu_sounds() == std::vector<int>{6003},
+            "Raw keypad binding lost its selected action or acceptance sound");
+    const auto configuration = frontend.configuration();
+    bool found = false;
+    for (std::size_t offset = 0; offset < configuration.size(); offset += 128) {
+        if (configuration[offset] != 20 || configuration[offset + 8] != 2) {
+            continue;
+        }
+        found = true;
+        require(configuration[offset + 16] == 0x48,
+                "Controller remapping normalized a raw keypad scan code");
+    }
+    require(found, "Raw keypad binding lost its controller record");
+}
+
+void test_cancel_confirmation_age() {
+    using swiv3d::FrontendPhase;
+    constexpr unsigned confirmation_draws = 4;
+    swiv3d::Frontend frontend(globals(), {});
+    for (unsigned draw = 0; draw < confirmation_draws; ++draw) {
+        require(!frontend.accepts_queued_key(0x1c) && !frontend.accepts_queued_key(0x9c),
+                "Menu confirmation became available before four completed draws");
+        frontend.presented();
+    }
+    frontend.press(0x01);
+    require(frontend.accepts_queued_key(0x1c) && frontend.take_menu_sounds().empty(),
+            "Ignored pilot cancellation reset confirmation age or emitted feedback");
+    for (auto scan : {0x1c, 0x1e, 0x1c}) {
+        frontend.press(scan);
+    }
+    for (unsigned draw = 0; draw < confirmation_draws; ++draw) {
+        frontend.presented();
+    }
+    frontend.press(0x01);
+    require(frontend.state().phase == FrontendPhase::controller_type && frontend.accepts_queued_key(0x9c),
+            "Ignored controller cancellation reset confirmation age");
+    for (auto scan : {0x1c, 0x01, 0xd0, 0x1c}) {
+        frontend.press(scan);
+    }
+    require(frontend.state().phase == FrontendPhase::settings, "Cancellation fixture did not reach settings");
+    for (unsigned draw = 0; draw < confirmation_draws; ++draw) {
+        frontend.presented();
+    }
+    frontend.take_menu_sounds();
+    frontend.press(0x3b);
+    require(frontend.state().phase == FrontendPhase::main_menu && frontend.state().selection == 4 &&
+            !frontend.accepts_queued_key(0x1c) && frontend.take_menu_sounds() == std::vector<int>{6003},
+            "F1 cancellation lost menu selection, confirmation reset or action feedback");
+}
+
 void test_unlocked_key_remapping() {
     swiv3d::Frontend frontend(globals(),{});
     frontend.press(0x1c);
@@ -755,6 +829,8 @@ int main(int argc, char** argv) {
         test_death_results_headings();
         test_campaign_completion();
         test_unlocked_key_remapping();
+        test_raw_editor_keys();
+        test_cancel_confirmation_age();
         test_menu_action_feedback();
         test_settings_entry();
         test_pilot_record_deletion();

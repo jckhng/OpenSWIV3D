@@ -16,6 +16,8 @@ namespace swiv3d {
 namespace {
 
 constexpr std::size_t command_bytes = 64;
+constexpr std::int32_t player_command = 1000;
+constexpr std::int32_t demo_player_command = 1001;
 constexpr std::uint32_t model_group = 10;
 constexpr std::uint32_t texture_group = 12;
 constexpr std::uint32_t resource_group_size = 1000;
@@ -95,18 +97,7 @@ public:
         if (request.phase != FrontendPhase::mission_request || request.craft > 3 || u32(profile(), 44) > 3) {
             throw std::runtime_error("Unsupported mission craft or campaign");
         }
-        for (const auto& entry : level.resources()) {
-            directory_.emplace(entry.id, entry);
-            bytes_.resize(std::max(bytes_.size(), static_cast<std::size_t>(entry.offset) + entry.size));
-            const auto data = level.load(entry.id);
-            std::copy(data.begin(), data.end(), bytes_.begin() + entry.offset);
-        }
-        for (auto id : {100U, 102U, 103U}) {
-            if (member(id).size != map_side * map_side) {
-                throw std::runtime_error("Unsupported mission map dimensions");
-            }
-        }
-        bind_assets(level);
+        load_level(level);
         state_.grid.fill(no_entity);
         setup(configuration);
         initial_state_ = state_;
@@ -553,6 +544,21 @@ private:
         return found->second;
     }
 
+    void load_level(const Archive& level) {
+        for (const auto& entry : level.resources()) {
+            directory_.emplace(entry.id, entry);
+            bytes_.resize(std::max(bytes_.size(), static_cast<std::size_t>(entry.offset) + entry.size));
+            const auto data = level.load(entry.id);
+            std::copy(data.begin(), data.end(), bytes_.begin() + entry.offset);
+        }
+        for (auto id : {100U, 102U, 103U}) {
+            if (member(id).size != map_side * map_side) {
+                throw std::runtime_error("Unsupported mission map dimensions");
+            }
+        }
+        bind_assets(level);
+    }
+
     void bind_assets(const Archive& level) {
         bool first_model = true;
         for (const auto& entry : level.resources()) {
@@ -696,6 +702,36 @@ private:
         }
     }
 
+    void setup_player(const std::array<std::int32_t, 16>& command) {
+        auto& player = allocate(player_slot);
+        reference(player, command, 0x217, 496, 80, Behavior::helicopter);
+        player.words[2] = static_cast<std::int32_t>(u32(profile(), 48));
+        player.words[19] = 990;
+        state_.weapons.primary_level = i32(profile(), 52);
+        const auto payload = profile();
+        for (std::size_t i = 0; i < state_.weapons.ammunition.size(); ++i) {
+            const int value = payload.at(i * 2) | payload.at(i * 2 + 1) << 8;
+            state_.weapons.ammunition[i] = value < 32768 ? value : value - 65536;
+        }
+        state_.flight.previous_heading = command[3];
+        state_.player = player_slot;
+        if (command[0] == demo_player_command) {
+            state_.flight.attitude = {player.words[13] * 256, player.words[14] * 256, player.words[15] * 128};
+            player.words[1] = 0x40;
+            player.words[26] = static_cast<int>(Behavior::demo_helicopter);
+            state_.flight.control = PlayerControl::disabled;
+            return;
+        }
+        detail::Combat initialization(state_,
+            [this](int x, int z) { return height(x, z); },
+            [this](std::uint32_t id) { return resource(id); }, {},
+            [this](int x, int z) { return surface_height(x, z); },
+            static_cast<CraftKind>(u32(profile(), 44)));
+        for (std::size_t i = 0; i < state_.entities.size(); ++i) {
+            entity_indices_[state_.entities[i].slot] = i;
+        }
+    }
+
     void setup(const std::vector<std::uint8_t>& configuration) {
         // Reserve once: spawn/reference retain parent references while allocating.
         state_.entities.reserve(object_slots + 1);
@@ -711,36 +747,11 @@ private:
                 ended = true;
                 break;
             }
-            if (command[0] == 1000 || command[0] == 1001) {
+            if (command[0] == player_command || command[0] == demo_player_command) {
                 if (found_player) {
                     continue;
                 }
-                auto& player = allocate(player_slot);
-                reference(player, command, 0x217, 496, 80, Behavior::helicopter);
-                player.words[2] = static_cast<std::int32_t>(u32(profile(), 48));
-                player.words[19] = 990;
-                state_.weapons.primary_level = i32(profile(), 52);
-                const auto payload = profile();
-                for (std::size_t i = 0; i < state_.weapons.ammunition.size(); ++i) {
-                    const int value = payload.at(i * 2) | payload.at(i * 2 + 1) << 8;
-                    state_.weapons.ammunition[i] = value < 32768 ? value : value - 65536;
-                }
-                state_.flight.previous_heading = command[3];
-                state_.player = player_slot;
-                if (command[0] == 1001) {
-                    state_.flight.attitude = {player.words[13] * 256,player.words[14] * 256,player.words[15] * 128};
-                    player.words[1] = 0x40;
-                    player.words[26] = static_cast<int>(Behavior::demo_helicopter);
-                    state_.flight.control = PlayerControl::disabled;
-                    found_player = true;
-                    continue;
-                }
-                detail::Combat initialization(state_,
-                    [this](int x,int z) { return height(x,z); },
-                    [this](std::uint32_t id) { return resource(id); }, {},
-                    [this](int x,int z) { return surface_height(x,z); },
-                    static_cast<CraftKind>(u32(profile(),44)));
-                for (std::size_t i = 0; i < state_.entities.size(); ++i) { entity_indices_[state_.entities[i].slot] = i; }
+                setup_player(command);
                 found_player = true;
                 continue;
             }

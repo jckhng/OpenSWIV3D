@@ -57,6 +57,7 @@ constexpr std::uint32_t binding_actions[]{21,22,24,25,26,27,28,29,30,31,32};
 constexpr std::size_t binding_offsets[]{0x10,0x14,0x18,0x1c,0x20,0x24,0x38,0x28,0x2c,0x30,0x34};
 constexpr int continuous_slider_step = 2;
 constexpr int viewport_shortcut_step = 5;
+constexpr int debug_shortcut_counter = 1000000;
 constexpr int slider_maximum = 255;
 constexpr int detail_slider_step = 75;
 constexpr int detail_minimum = 15;
@@ -75,8 +76,9 @@ constexpr std::uint32_t menu_confirmation_draws = 4;
 
 enum Scan : std::uint32_t {
     escape = 0x01, backspace = 0x0e, enter = 0x1c, control = 0x1d,
-    special_fire = 0x32, comma = 0x33, period = 0x34, space = 0x39, f1 = 0x3b,
-    keypad_up = 0x48, keypad_left = 0x4b, keypad_right = 0x4d, keypad_down = 0x50, keypad_enter = 0x9c,
+    special_fire = 0x32, comma = 0x33, period = 0x34, space = 0x39, f1 = 0x3b, f11 = 0x57, f12 = 0x58,
+    keypad_up = 0x48, keypad_minus = 0x4a, keypad_left = 0x4b, keypad_right = 0x4d, keypad_plus = 0x4e,
+    keypad_down = 0x50, keypad_enter = 0x9c,
     up = 0xc8, page_up = 0xc9, left = 0xcb, right = 0xcd,
     down = 0xd0, page_down = 0xd1
 };
@@ -462,207 +464,41 @@ public:
     }
 
     void press(std::uint32_t scan, KeyShift shift) {
-        if (state_.phase == FrontendPhase::mission_request) {
-            if (scan == escape || scan == pause_scan) {
-                state_.mission_menu = true;
-                if (scan == escape) { mission_abort_menu(); }
-                else { mission_pause_menu(); }
+        switch (state_.phase) {
+        case FrontendPhase::mission_request:
+            mission_key(scan);
+            return;
+        case FrontendPhase::grab_name:
+            grab_name_key(scan, shift);
+            return;
+        case FrontendPhase::mission_pause:
+            if (scan != 0) {
+                resume_mission();
             }
-            if (scan == 0x4a) { state_.screen_size = std::max(0,state_.screen_size - viewport_shortcut_step); }
-            if (scan == 0x4e) { state_.screen_size = std::min(slider_maximum,state_.screen_size + viewport_shortcut_step); }
-            if (scan == 0x58) { state_.debug_counter = 1000000; }
-            if (scan == f1) { state_.mission_menu = true; settings_menu(); }
-            if (scan == 0x58 && state_.cheat_mode) { state_.mission_menu = true; cheat_page_ = 0; cheats_menu(); }
-            if (scan == 0x57 && profiles_.cheats(state_.player)) { state_.mission_menu = true; grab_menu(); }
             return;
-        }
-        if (state_.phase == FrontendPhase::grab_name) { grab_name_key(scan,shift); return; }
-        if (state_.phase == FrontendPhase::mission_pause) {
-            if (scan != 0) { resume_mission(); }
+        case FrontendPhase::key_capture:
+            binding_key(scan);
             return;
-        }
-        if (state_.phase == FrontendPhase::key_capture) {
-            if (scan == 0 || scan >= 256) { return; }
-            if (resources_.text(key_labels_group,scan,state_.language).front() == '#' && !profiles_.cheats(state_.player)) { return; }
-            const auto found = std::find(std::begin(binding_actions),std::end(binding_actions),binding_action_);
-            profiles_.controls(state_.player).set(binding_offsets[found - std::begin(binding_actions)],scan);
-            menu_sounds_.push_back(menu_action_sound);
-            bindings_menu(static_cast<int>(binding_action_));
-            return;
-        }
-        if (state_.phase == FrontendPhase::pilot_name) {
+        case FrontendPhase::pilot_name:
             name_key(scan, shift);
             return;
-        }
-        if (state_.phase == FrontendPhase::opening_movies || state_.phase == FrontendPhase::quit) { return; }
-        if (state_.phase == FrontendPhase::credits) {
-            if (scan != 0 && ++state_.credit_page == credit_page_count) { main_menu(); menu_.select(6); }
+        case FrontendPhase::opening_movies:
+        case FrontendPhase::quit:
             return;
-        }
-        if (state_.phase == FrontendPhase::briefing) {
+        case FrontendPhase::credits:
+            if (scan != 0 && ++state_.credit_page == credit_page_count) {
+                main_menu();
+                menu_.select(6);
+            }
+            return;
+        case FrontendPhase::briefing:
             if (scan == escape) {
                 dispatch_sequence();
             }
             return;
-        }
-        if (scan == keypad_up) { scan = up; }
-        if (scan == keypad_down) { scan = down; }
-        if (scan == keypad_left) { scan = left; }
-        if (scan == keypad_right) { scan = right; }
-        if (scan == keypad_enter) { scan = enter; }
-        if (scan == f1) { scan = escape; }
-        if (scan == up || scan == down) {
-            menu_sounds_.push_back(menu_move_sound);
-            menu_.move(scan == up ? -1 : 1);
-            return;
-        }
-        if (scan == left || scan == right) {
-            adjust_slider(scan == left ? -1 : 1);
-            return;
-        }
-        const bool ignore_cancel = state_.phase == FrontendPhase::pilot_selection || state_.phase == FrontendPhase::controller_type ||
-            state_.phase == FrontendPhase::main_menu || state_.phase == FrontendPhase::mission_results;
-        if (scan == enter || (scan == escape && !ignore_cancel)) {
-            menu_polls_ = 0;
-            menu_sounds_.push_back(menu_action_sound);
-        }
-        if (scan == escape && state_.phase == FrontendPhase::controller_bindings) {
-            if (controller_return_ == FrontendPhase::settings) { settings_menu(10); }
-            else { main_menu(); }
-            return;
-        }
-        if (scan == escape) {
-            switch (state_.phase) {
-            case FrontendPhase::mission_grab: resume_mission(); return;
-            case FrontendPhase::mission_abort: resume_mission(); return;
-            case FrontendPhase::exit_confirmation: main_menu(); menu_.select(8); return;
-            case FrontendPhase::pilot_deletion: pilot_menu(); menu_.select(1); return;
-            case FrontendPhase::settings:
-                if (state_.mission_menu) { state_.mission_menu = false; state_.phase = FrontendPhase::mission_request; return; }
-                main_menu(); menu_.select(4); return;
-            case FrontendPhase::axis_bindings: bindings_menu(20); return;
-            case FrontendPhase::cheat_menu: state_.mission_menu = false; state_.phase = FrontendPhase::mission_request; return;
-            case FrontendPhase::sound_volume: settings_menu(11); return;
-            case FrontendPhase::language_selection: settings_menu(12); return;
-            case FrontendPhase::gamma_selection: settings_menu(13); return;
-            case FrontendPhase::music_selection: settings_menu(14); return;
-            default: break;
-            }
-        }
-        if (scan == escape && state_.phase == FrontendPhase::level_selection) {
-            const int selection = test_levels_ ? 9 : 3;
-            main_menu();
-            menu_.select(selection);
-            return;
-        }
-        if (scan != enter) {
-            return;
-        }
-        if (state_.phase == FrontendPhase::mission_abort) {
-            if (menu_.selection() == 1) { pending_abort_ = true; }
-            else { resume_mission(); }
-            return;
-        }
-        const auto selection = menu_.selection();
-        switch (state_.phase) {
-        case FrontendPhase::mission_grab:
-            if (selection == 10) { state_.grab_name.clear(); grab_name_menu(); }
-            if (selection == 11) { pending_grab_ = GrabAction::increment; }
-            if (selection == 12) { state_.grab_statistics = !state_.grab_statistics; }
-            return;
-        case FrontendPhase::pilot_selection:
-            if (selection == 0) {
-                new_pilot();
-            } else if (selection >= static_cast<std::int32_t>(pilot_action_base) && selection < static_cast<std::int32_t>(pilot_action_base) + static_cast<std::int32_t>(pilot_count)) {
-                state_.player = selection - static_cast<std::int32_t>(pilot_action_base);
-                selected_pilot();
-            } else {
-                deletion_menu();
-            }
-            return;
-        case FrontendPhase::controller_type:
-            if (profiles_.controls(state_.player).get(controller_type_offset) != static_cast<unsigned>(selection)) { controller_defaults(selection); }
-            bindings_menu();
-            return;
-        case FrontendPhase::controller_bindings:
-            if (selection == 1) { controller_menu(); return; }
-            if (selection == 20) { axes_menu(); return; }
-            binding_action_ = static_cast<std::uint32_t>(selection);
-            key_menu();
-            return;
-        case FrontendPhase::pilot_deletion:
-            if (selection >= static_cast<int>(pilot_action_base)) { profiles_.erase_pilot(selection - pilot_action_base); }
-            pilot_menu(); menu_.select(1);
-            return;
-        case FrontendPhase::settings:
-            switch (selection) {
-            case 10: controller_return_ = FrontendPhase::settings; bindings_menu(); return;
-            case 11: volume_menu(); return;
-            case 12: language_menu(); return;
-            case 13: gamma_menu(); return;
-            case 14: music_menu(); return;
-            case 15: state_.debug_controls = !state_.debug_controls; settings_menu(15); return;
-            default: return;
-            }
-        case FrontendPhase::language_selection:
-            state_.language = selection;
-            profiles_.pilot(state_.player).set(pilot_language_offset,state_.language);
-            settings_menu(12);
-            return;
-        case FrontendPhase::gamma_selection:
-            state_.gamma = selection;
-            profiles_.pilot(state_.player).set(pilot_gamma_offset,state_.gamma);
-            gamma_menu();
-            return;
-        case FrontendPhase::music_selection:
-            state_.music_type = selection;
-            profiles_.pilot(state_.player).set(pilot_music_offset,state_.music_type);
-            settings_menu(14);
-            return;
-        case FrontendPhase::sound_volume: return;
-        case FrontendPhase::main_menu:
-            if (selection == 5) { state_.phase = FrontendPhase::opening_movies; return; }
-            if (selection == 6) { state_.credit_page = 0; state_.phase = FrontendPhase::credits; return; }
-            if (selection == 8) { exit_menu(); return; }
-            if (selection == 9) { test_levels_ = true; state_.cheat_mode = true; level_page_ = 0; level_menu(); return; }
-            if (selection == 4) { settings_menu(); return; }
-            if (selection == 7) { state_.player = -1; pilot_menu(); return; }
-            if (selection == 3) {
-                level_page_ = 0;
-                level_menu();
-                return;
-            }
-            if (selection != 1 && selection != 2) {
-                throw std::runtime_error("This main-menu branch is not implemented");
-            }
-            state_.cheat_mode = false;
-            start_sequence(selection);
-            return;
-        case FrontendPhase::level_selection:
-            if (selection == previous_level_page || selection == next_level_page) {
-                level_page_ = selection == previous_level_page ? std::max(0,level_page_ - level_page_step) :
-                    std::min(level_count_ - 5,level_page_ + level_page_step);
-                level_menu();
-                if (test_levels_) { menu_.select(selection); menu_.ensure_selection(); }
-            } else { state_.cheat_mode = test_levels_; start_sequence(2,static_cast<std::uint32_t>(selection)); }
-            return;
-        case FrontendPhase::exit_confirmation:
-            if (selection == 1) { state_.phase = FrontendPhase::quit; }
-            else { main_menu(); menu_.select(8); }
-            return;
-        case FrontendPhase::axis_bindings: {
-            auto& record = profiles_.controls(state_.player);
-            auto axes = record.buttons();
-            if (selection >= 1 && selection <= 3) { axes[selection-1] = (axes[selection-1] + 1) % (axis_count(record) + 1); }
-            if (selection == 4) { axes[3] ^= 1; }
-            record.set_buttons(axes); axes_menu(selection); return;
-        }
-        case FrontendPhase::cheat_menu:
-            if (selection == -9) { cheat_page_ = (cheat_page_ + 1) % 3; cheats_menu(); }
-            else { pending_cheat_ = selection; }
-            return;
         default:
-            throw std::runtime_error("This frontend operation is not implemented");
+            menu_key(scan);
+            return;
         }
     }
 
@@ -767,6 +603,316 @@ public:
     std::vector<std::uint8_t> configuration_file() const { return profiles_.file(); }
 
 private:
+    void mission_key(std::uint32_t scan) {
+        switch (scan) {
+        case escape:
+            state_.mission_menu = true;
+            mission_abort_menu();
+            return;
+        case pause_scan:
+            state_.mission_menu = true;
+            mission_pause_menu();
+            return;
+        case keypad_minus:
+            state_.screen_size = std::max(0, state_.screen_size - viewport_shortcut_step);
+            return;
+        case keypad_plus:
+            state_.screen_size = std::min(slider_maximum, state_.screen_size + viewport_shortcut_step);
+            return;
+        case f1:
+            state_.mission_menu = true;
+            settings_menu();
+            return;
+        case f11:
+            if (profiles_.cheats(state_.player)) {
+                state_.mission_menu = true;
+                grab_menu();
+            }
+            return;
+        case f12:
+            state_.debug_counter = debug_shortcut_counter;
+            if (state_.cheat_mode) {
+                state_.mission_menu = true;
+                cheat_page_ = 0;
+                cheats_menu();
+            }
+            return;
+        default:
+            return;
+        }
+    }
+
+    void binding_key(std::uint32_t scan) {
+        if (scan == 0 || scan >= 256) {
+            return;
+        }
+        if (resources_.text(key_labels_group, scan, state_.language).front() == '#' && !profiles_.cheats(state_.player)) {
+            return;
+        }
+        const auto found = std::find(std::begin(binding_actions), std::end(binding_actions), binding_action_);
+        profiles_.controls(state_.player).set(binding_offsets[found - std::begin(binding_actions)], scan);
+        menu_sounds_.push_back(menu_action_sound);
+        bindings_menu(static_cast<int>(binding_action_));
+    }
+
+    void menu_key(std::uint32_t scan) {
+        // Editors and mission shortcuts consume raw scans before menu aliases.
+        if (scan == keypad_up) { scan = up; }
+        if (scan == keypad_down) { scan = down; }
+        if (scan == keypad_left) { scan = left; }
+        if (scan == keypad_right) { scan = right; }
+        if (scan == keypad_enter) { scan = enter; }
+        if (scan == f1) { scan = escape; }
+        if (scan == up || scan == down) {
+            menu_sounds_.push_back(menu_move_sound);
+            menu_.move(scan == up ? -1 : 1);
+            return;
+        }
+        if (scan == left || scan == right) {
+            adjust_slider(scan == left ? -1 : 1);
+            return;
+        }
+        if (scan == enter) {
+            menu_polls_ = 0;
+            menu_sounds_.push_back(menu_action_sound);
+            confirm_menu();
+            return;
+        }
+        if (scan != escape) {
+            return;
+        }
+        const bool ignore_cancel = state_.phase == FrontendPhase::pilot_selection || state_.phase == FrontendPhase::controller_type ||
+            state_.phase == FrontendPhase::main_menu || state_.phase == FrontendPhase::mission_results;
+        if (!ignore_cancel) {
+            menu_polls_ = 0;
+            menu_sounds_.push_back(menu_action_sound);
+        }
+        cancel_menu();
+    }
+
+    void cancel_menu() {
+        switch (state_.phase) {
+        case FrontendPhase::controller_bindings:
+            if (controller_return_ == FrontendPhase::settings) {
+                settings_menu(10);
+            } else {
+                main_menu();
+            }
+            return;
+        case FrontendPhase::mission_grab:
+        case FrontendPhase::mission_abort:
+        case FrontendPhase::cheat_menu:
+            resume_mission();
+            return;
+        case FrontendPhase::exit_confirmation:
+            main_menu();
+            menu_.select(8);
+            return;
+        case FrontendPhase::pilot_deletion:
+            pilot_menu();
+            menu_.select(1);
+            return;
+        case FrontendPhase::settings:
+            if (state_.mission_menu) {
+                resume_mission();
+                return;
+            }
+            main_menu();
+            menu_.select(4);
+            return;
+        case FrontendPhase::axis_bindings:
+            bindings_menu(20);
+            return;
+        case FrontendPhase::sound_volume:
+            settings_menu(11);
+            return;
+        case FrontendPhase::language_selection:
+            settings_menu(12);
+            return;
+        case FrontendPhase::gamma_selection:
+            settings_menu(13);
+            return;
+        case FrontendPhase::music_selection:
+            settings_menu(14);
+            return;
+        case FrontendPhase::level_selection: {
+            const int selection = test_levels_ ? 9 : 3;
+            main_menu();
+            menu_.select(selection);
+            return;
+        }
+        default:
+            return;
+        }
+    }
+
+    void confirm_menu() {
+        const auto selection = menu_.selection();
+        switch (state_.phase) {
+        case FrontendPhase::mission_abort:
+            if (selection == 1) {
+                pending_abort_ = true;
+            } else {
+                resume_mission();
+            }
+            return;
+        case FrontendPhase::mission_grab:
+            if (selection == 10) {
+                state_.grab_name.clear();
+                grab_name_menu();
+            }
+            if (selection == 11) { pending_grab_ = GrabAction::increment; }
+            if (selection == 12) { state_.grab_statistics = !state_.grab_statistics; }
+            return;
+        case FrontendPhase::pilot_selection:
+            if (selection == 0) {
+                new_pilot();
+            } else if (selection >= static_cast<std::int32_t>(pilot_action_base) && selection < static_cast<std::int32_t>(pilot_action_base) + static_cast<std::int32_t>(pilot_count)) {
+                state_.player = selection - static_cast<std::int32_t>(pilot_action_base);
+                selected_pilot();
+            } else {
+                deletion_menu();
+            }
+            return;
+        case FrontendPhase::controller_type:
+            if (profiles_.controls(state_.player).get(controller_type_offset) != static_cast<unsigned>(selection)) { controller_defaults(selection); }
+            bindings_menu();
+            return;
+        case FrontendPhase::controller_bindings:
+            if (selection == 1) {
+                controller_menu();
+                return;
+            }
+            if (selection == 20) {
+                axes_menu();
+                return;
+            }
+            binding_action_ = static_cast<std::uint32_t>(selection);
+            key_menu();
+            return;
+        case FrontendPhase::pilot_deletion:
+            if (selection >= static_cast<int>(pilot_action_base)) { profiles_.erase_pilot(selection - pilot_action_base); }
+            pilot_menu();
+            menu_.select(1);
+            return;
+        case FrontendPhase::settings:
+            switch (selection) {
+            case 10:
+                controller_return_ = FrontendPhase::settings;
+                bindings_menu();
+                return;
+            case 11: volume_menu(); return;
+            case 12: language_menu(); return;
+            case 13: gamma_menu(); return;
+            case 14: music_menu(); return;
+            case 15:
+                state_.debug_controls = !state_.debug_controls;
+                settings_menu(15);
+                return;
+            default: return;
+            }
+        case FrontendPhase::language_selection:
+            state_.language = selection;
+            profiles_.pilot(state_.player).set(pilot_language_offset,state_.language);
+            settings_menu(12);
+            return;
+        case FrontendPhase::gamma_selection:
+            state_.gamma = selection;
+            profiles_.pilot(state_.player).set(pilot_gamma_offset,state_.gamma);
+            gamma_menu();
+            return;
+        case FrontendPhase::music_selection:
+            state_.music_type = selection;
+            profiles_.pilot(state_.player).set(pilot_music_offset,state_.music_type);
+            settings_menu(14);
+            return;
+        case FrontendPhase::sound_volume:
+            return;
+        case FrontendPhase::main_menu:
+            if (selection == 5) {
+                state_.phase = FrontendPhase::opening_movies;
+                return;
+            }
+            if (selection == 6) {
+                state_.credit_page = 0;
+                state_.phase = FrontendPhase::credits;
+                return;
+            }
+            if (selection == 8) {
+                exit_menu();
+                return;
+            }
+            if (selection == 9) {
+                test_levels_ = true;
+                state_.cheat_mode = true;
+                level_page_ = 0;
+                level_menu();
+                return;
+            }
+            if (selection == 4) {
+                settings_menu();
+                return;
+            }
+            if (selection == 7) {
+                state_.player = -1;
+                pilot_menu();
+                return;
+            }
+            if (selection == 3) {
+                level_page_ = 0;
+                level_menu();
+                return;
+            }
+            if (selection != 1 && selection != 2) {
+                throw std::runtime_error("This main-menu branch is not implemented");
+            }
+            state_.cheat_mode = false;
+            start_sequence(selection);
+            return;
+        case FrontendPhase::level_selection:
+            if (selection == previous_level_page || selection == next_level_page) {
+                level_page_ = selection == previous_level_page ? std::max(0,level_page_ - level_page_step) :
+                    std::min(level_count_ - 5,level_page_ + level_page_step);
+                level_menu();
+                if (test_levels_) {
+                    menu_.select(selection);
+                    menu_.ensure_selection();
+                }
+            } else {
+                state_.cheat_mode = test_levels_;
+                start_sequence(2, static_cast<std::uint32_t>(selection));
+            }
+            return;
+        case FrontendPhase::exit_confirmation:
+            if (selection == 1) {
+                state_.phase = FrontendPhase::quit;
+            } else {
+                main_menu();
+                menu_.select(8);
+            }
+            return;
+        case FrontendPhase::axis_bindings: {
+            auto& record = profiles_.controls(state_.player);
+            auto axes = record.buttons();
+            if (selection >= 1 && selection <= 3) { axes[selection-1] = (axes[selection-1] + 1) % (axis_count(record) + 1); }
+            if (selection == 4) { axes[3] ^= 1; }
+            record.set_buttons(axes);
+            axes_menu(selection);
+            return;
+        }
+        case FrontendPhase::cheat_menu:
+            if (selection == -9) {
+                cheat_page_ = (cheat_page_ + 1) % 3;
+                cheats_menu();
+            } else {
+                pending_cheat_ = selection;
+            }
+            return;
+        default:
+            throw std::runtime_error("This frontend operation is not implemented");
+        }
+    }
+
     void grab_menu() {
         state_.phase = FrontendPhase::mission_grab;
         border_start(); text(12,1,-1,heading_row); separator(); line(3);

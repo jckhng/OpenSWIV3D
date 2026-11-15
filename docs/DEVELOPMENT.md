@@ -13,6 +13,11 @@ modules and rendering modules own the simulation and presentation.
 `src/profile_file.cpp` handles filesystem profile I/O. Windows window, input
 and audio adapters are in the corresponding `*_win32.cpp` files.
 
+`Frontend::Impl::press` dispatches raw input to editors and mission shortcuts.
+Its private menu handler normalizes aliases before cancellation or confirmation.
+`Mission::Impl::load_level` and `setup_player` own level loading and initial
+player construction within the retained mission state.
+
 `third_party/libsmacker` retains its upstream identity, license and dated
 local change notes. The player links it as a replaceable shared library.
 Preserve those notices and ship matching decoder source with Windows builds.
@@ -22,6 +27,30 @@ clock domains and resource decoding. Inspect existing callers and tests
 before changing behavior. Run focused regressions and the complete synthetic
 CTest suite. Original-resource tests require a developer-supplied installation.
 Report controlled fixtures and live play separately when describing coverage.
+
+## Regression checks
+
+Run the synthetic CTest baseline using the commands in BUILDING.md. With an
+original installation available, also run the retained controller/session and
+movie-resource checks from the repository root.
+
+```powershell
+$game = Read-Host 'Original game directory'
+.\build\Release\swiv3d_controller_session.exe $game
+.\build\Release\swiv3d_cutscene_tests.exe --resources $game
+```
+
+The corresponding Linux commands use the build directory from BUILDING.md.
+
+```sh
+./build/swiv3d_controller_session "$game"
+./build/swiv3d_cutscene_tests --resources "$game"
+```
+
+Set `game` to the original installation directory before running the Linux
+commands. Private reference comparisons use fixed original captures and the
+same declared input conditions for each revision. Record the compared state,
+pixels, palette or PCM and retain a negative control with each comparison.
 
 ## Private reference work
 
